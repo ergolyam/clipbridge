@@ -126,4 +126,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    implementation("androidx.appcompat:appcompat:1.7.0")
 }
