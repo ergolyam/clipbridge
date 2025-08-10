@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">ClipBridge</string>
+
+    <string name="notif_channel_name">ClipBridge</string>
+    <string name="notif_channel_desc">Clipboard sync connection</string>
+    <string name="notif_title_connected">ClipBridge: Connected</string>
+    <string name="notif_title_connecting">ClipBridge: Connecting…</string>
+    <string name="notif_title_disconnected">ClipBridge: Disconnected</string>
+
+    <string name="toast_sent">Sent to server</string>
+    <string name="toast_send_failed">Failed to send</string>
+
+</resources>
+
