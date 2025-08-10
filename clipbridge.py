@@ -60,7 +60,7 @@ def read_clipboard_text(timeout: float = 1.0) -> Tuple[bool, Optional[str]]:
 
 def write_clipboard_text(text: str) -> bool:
     tools = [
-        ("wl-copy", ["--type", "text"], "wl-copy write failed: %s"),
+        ("wl-copy", [], "wl-copy write failed: %s"),
         ("xclip", ["-selection", "clipboard", "-in"], "xclip write failed: %s"),
         ("xsel", ["--clipboard", "--input"], "xsel write failed: %s"),
     ]
