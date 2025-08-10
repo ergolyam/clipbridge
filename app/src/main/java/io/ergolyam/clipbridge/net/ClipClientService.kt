@@ -1,9 +1,5 @@
 package io.ergolyam.clipbridge.net
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -14,9 +10,8 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.widget.Toast
-import androidx.core.app.NotificationCompat
 import io.ergolyam.clipbridge.R
-import io.ergolyam.clipbridge.ui.MainActivity
+import io.ergolyam.clipbridge.notify.Notifications
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,9 +44,6 @@ class ClipClientService : Service() {
         const val EXTRA_STATUS_TEXT = "status"
         const val EXTRA_AUTOCONNECT = "auto"
 
-        private const val CHANNEL_ID = "clipbridge_channel"
-        private const val NOTIF_ID = 1001
-
         private const val MSG_TEXT: Byte = 0x01
         private const val MAX_BYTES = 1_048_576
     }
@@ -76,7 +68,7 @@ class ClipClientService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        Notifications.initChannel(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,19 +77,18 @@ class ClipClientService : Service() {
                 val newHost = intent.getStringExtra(EXTRA_HOST) ?: ""
                 val newPort = intent.getIntExtra(EXTRA_PORT, 28900)
                 val newAuto = intent.getBooleanExtra(EXTRA_AUTOCONNECT, false)
-
                 if (scope == null) scope = CoroutineScope(Dispatchers.IO)
 
                 if (startedOnce && host == newHost && port == newPort && autoConnectEnabled == newAuto) {
                     if (isConnectedNow) {
-                        startForeground(NOTIF_ID, notifConnected("$host:$port"))
+                        startForeground(Notifications.NOTIF_ID, Notifications.notifConnected(this, "$host:$port"))
                         updateStatus(true, "Connected to $host:$port")
                     } else if (autoConnectEnabled) {
-                        startForeground(NOTIF_ID, notifWaiting("$host:$port"))
+                        startForeground(Notifications.NOTIF_ID, Notifications.notifWaiting(this, "$host:$port"))
                         updateStatus(false, "Waiting for $host:$port…")
                         startReachabilityWatch()
                     } else {
-                        startForeground(NOTIF_ID, notifDisconnected())
+                        startForeground(Notifications.NOTIF_ID, Notifications.notifDisconnected(this))
                         updateStatus(false, "Disconnected")
                     }
                     return START_NOT_STICKY
@@ -115,11 +106,11 @@ class ClipClientService : Service() {
                 isConnectedNow = false
 
                 if (autoConnectEnabled) {
-                    startForeground(NOTIF_ID, notifWaiting("$host:$port"))
+                    startForeground(Notifications.NOTIF_ID, Notifications.notifWaiting(this, "$host:$port"))
                     updateStatus(false, "Waiting for $host:$port…")
                     startReachabilityWatch()
                 } else {
-                    startForeground(NOTIF_ID, notifDisconnected())
+                    startForeground(Notifications.NOTIF_ID, Notifications.notifDisconnected(this))
                     connect()
                 }
             }
@@ -133,7 +124,7 @@ class ClipClientService : Service() {
             ACTION_STOP -> {
                 stopping = true
                 updateStatus(false, "Disconnected")
-                startForeground(NOTIF_ID, notifDisconnected())
+                startForeground(Notifications.NOTIF_ID, Notifications.notifDisconnected(this))
                 stopSelfSafely()
             }
         }
@@ -170,7 +161,7 @@ class ClipClientService : Service() {
         readerJob?.cancel()
         readerJob = s.launch {
             updateStatus(false, "Connecting to $host:$port")
-            startForeground(NOTIF_ID, notifConnecting("$host:$port"))
+            startForeground(Notifications.NOTIF_ID, Notifications.notifConnecting(this@ClipClientService, "$host:$port"))
             try {
                 val sock = Socket()
                 sock.connect(InetSocketAddress(host, port), 5_000)
@@ -179,22 +170,22 @@ class ClipClientService : Service() {
                 output = DataOutputStream(sock.getOutputStream())
                 isConnectedNow = true
                 updateStatus(true, "Connected to $host:$port")
-                startForeground(NOTIF_ID, notifConnected("$host:$port"))
+                startForeground(Notifications.NOTIF_ID, Notifications.notifConnected(this@ClipClientService, "$host:$port"))
                 readLoop()
             } catch (e: Exception) {
                 isConnectedNow = false
                 if (stopping) {
                     updateStatus(false, "Disconnected")
-                    startForeground(NOTIF_ID, notifDisconnected())
+                    startForeground(Notifications.NOTIF_ID, Notifications.notifDisconnected(this@ClipClientService))
                     return@launch
                 }
                 if (autoConnectEnabled) {
                     updateStatus(false, "Waiting for $host:$port…")
-                    startForeground(NOTIF_ID, notifWaiting("$host:$port"))
+                    startForeground(Notifications.NOTIF_ID, Notifications.notifWaiting(this@ClipClientService, "$host:$port"))
                     startReachabilityWatch()
                 } else {
                     updateStatus(false, "Disconnected")
-                    startForeground(NOTIF_ID, notifDisconnected())
+                    startForeground(Notifications.NOTIF_ID, Notifications.notifDisconnected(this@ClipClientService))
                 }
             }
         }
@@ -237,10 +228,10 @@ class ClipClientService : Service() {
             isConnectedNow = false
             closeSocket()
             if (!stopping && autoConnectEnabled) {
-                startForeground(NOTIF_ID, notifWaiting("$host:$port"))
+                startForeground(Notifications.NOTIF_ID, Notifications.notifWaiting(this@ClipClientService, "$host:$port"))
                 startReachabilityWatch()
             } else {
-                startForeground(NOTIF_ID, notifDisconnected())
+                startForeground(Notifications.NOTIF_ID, Notifications.notifDisconnected(this@ClipClientService))
             }
         }
     }
@@ -287,62 +278,6 @@ class ClipClientService : Service() {
             Toast.makeText(applicationContext, message, Toast.LENGTH_SHORT).show()
         }
     }
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val ch = NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.notif_channel_name),
-                NotificationManager.IMPORTANCE_LOW
-            ).apply { description = getString(R.string.notif_channel_desc) }
-            nm.createNotificationChannel(ch)
-        }
-    }
-
-    private fun contentPendingIntent(): PendingIntent {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-            (if (Build.VERSION.SDK_INT >= 23) PendingIntent.FLAG_IMMUTABLE else 0)
-        return PendingIntent.getActivity(this, 0, intent, flags)
-    }
-
-    private fun notifConnecting(endpoint: String): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_title_connecting))
-            .setContentText(endpoint)
-            .setOngoing(true)
-            .setContentIntent(contentPendingIntent())
-            .build()
-
-    private fun notifConnected(endpoint: String): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_title_connected))
-            .setContentText(endpoint)
-            .setOngoing(true)
-            .setContentIntent(contentPendingIntent())
-            .build()
-
-    private fun notifWaiting(endpoint: String): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_title_waiting))
-            .setContentText(endpoint)
-            .setOngoing(true)
-            .setContentIntent(contentPendingIntent())
-            .build()
-
-    private fun notifDisconnected(): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notif_title_disconnected))
-            .setOngoing(true)
-            .setContentIntent(contentPendingIntent())
-            .build()
 
     private fun closeSocket() {
         try { input?.close() } catch (_: Exception) {}
