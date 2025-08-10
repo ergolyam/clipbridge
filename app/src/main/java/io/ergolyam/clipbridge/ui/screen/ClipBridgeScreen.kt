@@ -4,10 +4,12 @@ import android.Manifest
 import android.app.Activity
 import android.app.NotificationManager
 import android.content.BroadcastReceiver
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +17,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -24,7 +25,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -52,7 +52,6 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
     var autoConnect by remember { mutableStateOf(Prefs.getAutoConnect(appCtx)) }
     var connected by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Disconnected") }
-    var outgoing by remember { mutableStateOf("") }
 
     val notifPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -207,25 +206,25 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
         }
 
         if (connected) {
-            TextField(
-                value = outgoing,
-                onValueChange = { outgoing = it },
-                minLines = 3,
-                maxLines = 8,
-                label = { Text("Text to send to PC") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 96.dp, max = 200.dp)
-            )
             Button(
                 onClick = {
+                    val cm = ContextCompat.getSystemService(ctx, ClipboardManager::class.java)
+                    val clip = cm?.primaryClip
+                    val clipText = if (clip != null && clip.itemCount > 0) {
+                        clip.getItemAt(0).coerceToText(ctx)?.toString()
+                    } else null
+
+                    if (clipText.isNullOrBlank()) {
+                        Toast.makeText(ctx, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
                     val i = Intent(ctx, ClipClientService::class.java).apply {
                         action = ClipClientService.ACTION_SEND_TEXT
-                        putExtra(ClipClientService.EXTRA_TEXT, outgoing)
+                        putExtra(ClipClientService.EXTRA_TEXT, clipText)
                     }
                     ctx.startService(i)
-                },
-                enabled = outgoing.isNotBlank()
+                }
             ) { Text("Send to PC") }
         }
     }
