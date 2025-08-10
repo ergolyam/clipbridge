@@ -3,12 +3,12 @@ package io.ergolyam.clipbridge.net
 import android.app.Service
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.widget.Toast
-import android.content.Context
 import io.ergolyam.clipbridge.R
 import io.ergolyam.clipbridge.notify.Notifications
 import kotlinx.coroutines.CoroutineScope
@@ -26,6 +26,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.coroutineContext
 
 class ClipClientService : Service() {
@@ -61,6 +62,9 @@ class ClipClientService : Service() {
     @Volatile private var startedOnce: Boolean = false
     @Volatile private var isConnectedNow: Boolean = false
 
+    /* Prevents parallel connect attempts. */
+    private val connecting = AtomicBoolean(false)
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -78,7 +82,6 @@ class ClipClientService : Service() {
                 val newAuto = intent.getBooleanExtra(EXTRA_AUTOCONNECT, false)
 
                 if (scope == null) scope = CoroutineScope(Dispatchers.IO)
-
                 stopping = false
 
                 if (startedOnce && host == newHost && port == newPort && autoConnectEnabled == newAuto) {
@@ -93,8 +96,8 @@ class ClipClientService : Service() {
                             Notifications.NOTIF_ID,
                             Notifications.notifWaiting(this, "$host:$port")
                         )
-                        updateStatus(false, "Waiting for $host:$port…")
                         startReachabilityWatch()
+                        updateStatus(false, "Waiting for $host:$port…")
                     } else {
                         connect()
                     }
@@ -110,6 +113,7 @@ class ClipClientService : Service() {
                 reachJob?.cancel()
                 closeSocket()
                 isConnectedNow = false
+                connecting.set(false)
 
                 if (autoConnectEnabled) {
                     startForeground(
@@ -150,6 +154,7 @@ class ClipClientService : Service() {
 
     private fun startReachabilityWatch() {
         if (!autoConnectEnabled) return
+        if (isConnectedNow || connecting.get()) return
         val s = scope ?: return
         reachJob?.cancel()
         reachJob = s.launch {
@@ -174,6 +179,10 @@ class ClipClientService : Service() {
 
     private fun connect() {
         val s = scope ?: return
+
+        if (isConnectedNow) return
+        if (!connecting.compareAndSet(false, true)) return
+
         reachJob?.cancel()
         readerJob?.cancel()
         readerJob = s.launch {
@@ -203,9 +212,7 @@ class ClipClientService : Service() {
                         Notifications.NOTIF_ID,
                         Notifications.notifDisconnected(this@ClipClientService)
                     )
-                    return@launch
-                }
-                if (autoConnectEnabled) {
+                } else if (autoConnectEnabled) {
                     updateStatus(false, "Waiting for $host:$port…")
                     startForeground(
                         Notifications.NOTIF_ID,
@@ -219,6 +226,8 @@ class ClipClientService : Service() {
                         Notifications.notifDisconnected(this@ClipClientService)
                     )
                 }
+            } finally {
+                connecting.set(false)
             }
         }
     }
@@ -332,6 +341,7 @@ class ClipClientService : Service() {
         reachJob?.cancel()
         scope?.cancel()
         scope = null
+        connecting.set(false)
         closeSocket()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

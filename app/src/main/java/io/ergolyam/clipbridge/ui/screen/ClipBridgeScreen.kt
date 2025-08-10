@@ -64,21 +64,6 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        if (Prefs.getAutoConnect(appCtx)) {
-            val p = port.toIntOrNull() ?: Prefs.getPort(appCtx)
-            val h = if (host.isBlank()) Prefs.getHost(appCtx) else host.trim()
-            val i = Intent(ctx, ClipClientService::class.java).apply {
-                action = ClipClientService.ACTION_START
-                putExtra(ClipClientService.EXTRA_HOST, h)
-                putExtra(ClipClientService.EXTRA_PORT, p)
-                putExtra(ClipClientService.EXTRA_AUTOCONNECT, true)
-            }
-            ContextCompat.startForegroundService(ctx, i)
-            status = "Waiting for $h:$p…"
-        }
-    }
-
     LaunchedEffect(autoConnect) {
         if (autoConnect) {
             val p = port.toIntOrNull() ?: Prefs.getPort(appCtx)
@@ -199,7 +184,6 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
                     } else {
                         act?.finish()
                     }
-
                     exitProcess(0)
                 }
             ) { Text("Exit") }
