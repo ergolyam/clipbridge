@@ -41,7 +41,7 @@ object Notifications {
 
     fun notifConnecting(ctx: Context, endpoint: String): Notification =
         NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.pending_actions_24)
             .setContentTitle(ctx.getString(R.string.notif_title_connecting))
             .setContentText(endpoint)
             .setOngoing(true)
@@ -50,7 +50,7 @@ object Notifications {
 
     fun notifConnected(ctx: Context, endpoint: String): Notification =
         NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.inventory_24)
             .setContentTitle(ctx.getString(R.string.notif_title_connected))
             .setContentText(endpoint)
             .setOngoing(true)
@@ -59,7 +59,7 @@ object Notifications {
 
     fun notifWaiting(ctx: Context, endpoint: String): Notification =
         NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.pending_actions_24)
             .setContentTitle(ctx.getString(R.string.notif_title_waiting))
             .setContentText(endpoint)
             .setOngoing(true)
@@ -68,7 +68,7 @@ object Notifications {
 
     fun notifDisconnected(ctx: Context): Notification =
         NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.assignment_late_24)
             .setContentTitle(ctx.getString(R.string.notif_title_disconnected))
             .setOngoing(true)
             .setContentIntent(contentIntent(ctx))
