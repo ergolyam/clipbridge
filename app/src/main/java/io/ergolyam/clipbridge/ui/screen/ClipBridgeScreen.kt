@@ -1,6 +1,8 @@
 package io.ergolyam.clipbridge.ui.screen
 
 import android.Manifest
+import android.app.Activity
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -34,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import io.ergolyam.clipbridge.data.Prefs
 import io.ergolyam.clipbridge.net.ClipClientService
+import io.ergolyam.clipbridge.notify.Notifications
+import kotlin.system.exitProcess
 
 @Composable
 fun ClipBridgeScreen(modifier: Modifier = Modifier) {
@@ -172,6 +176,27 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
                 },
                 enabled = connected
             ) { Text("Disconnect") }
+
+            Button(
+                onClick = {
+                    val stopIntent = Intent(ctx, ClipClientService::class.java).apply {
+                        action = ClipClientService.ACTION_STOP
+                    }
+                    ctx.startService(stopIntent)
+
+                    val nm = ContextCompat.getSystemService(ctx, NotificationManager::class.java)
+                    nm?.cancel(Notifications.NOTIF_ID)
+
+                    val act = ctx as? Activity
+                    if (Build.VERSION.SDK_INT >= 21) {
+                        act?.finishAndRemoveTask()
+                    } else {
+                        act?.finish()
+                    }
+
+                    exitProcess(0)
+                }
+            ) { Text("Exit") }
         }
 
         if (connected) {
