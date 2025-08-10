@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -59,6 +58,21 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
         }
     }
 
+    LaunchedEffect(Unit) {
+        if (Prefs.getAutoConnect(appCtx)) {
+            val p = port.toIntOrNull() ?: Prefs.getPort(appCtx)
+            val h = if (host.isBlank()) Prefs.getHost(appCtx) else host.trim()
+            val i = Intent(ctx, ClipClientService::class.java).apply {
+                action = ClipClientService.ACTION_START
+                putExtra(ClipClientService.EXTRA_HOST, h)
+                putExtra(ClipClientService.EXTRA_PORT, p)
+                putExtra(ClipClientService.EXTRA_AUTOCONNECT, true)
+            }
+            ContextCompat.startForegroundService(ctx, i)
+            status = "Waiting for $h:$p…"
+        }
+    }
+
     LaunchedEffect(autoConnect) {
         if (autoConnect) {
             val p = port.toIntOrNull() ?: Prefs.getPort(appCtx)
@@ -75,9 +89,7 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
     }
 
     DisposableEffect(Unit) {
-        val f = IntentFilter().apply {
-            addAction(ClipClientService.ACTION_STATUS)
-        }
+        val f = IntentFilter().apply { addAction(ClipClientService.ACTION_STATUS) }
         val r = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (intent.action == ClipClientService.ACTION_STATUS) {
@@ -139,9 +151,7 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
             Button(
                 onClick = {
                     val p = port.toIntOrNull() ?: 28900
-
                     Prefs.saveEndpoint(appCtx, host.trim(), p)
-
                     val i = Intent(ctx, ClipClientService::class.java).apply {
                         action = ClipClientService.ACTION_START
                         putExtra(ClipClientService.EXTRA_HOST, host.trim())
