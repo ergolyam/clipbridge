@@ -196,11 +196,20 @@ class ClipClientService : Service() {
 
         readerJob?.cancel()
         readerJob = s.launch {
-            updateStatus(false, "Connecting to $host:$port")
-            startForeground(
-                Notifications.NOTIF_ID,
-                Notifications.notifConnecting(this@ClipClientService, "$host:$port")
-            )
+            if (!autoConnectEnabled) {
+                updateStatus(false, "Connecting to $host:$port")
+                startForeground(
+                    Notifications.NOTIF_ID,
+                    Notifications.notifConnecting(this@ClipClientService, "$host:$port")
+                )
+            } else {
+                updateStatus(false, "Waiting for $host:$port…")
+                startForeground(
+                    Notifications.NOTIF_ID,
+                    Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                )
+            }
+
             try {
                 val sock = Socket()
                 sock.connect(InetSocketAddress(host, port), 5_000)
@@ -217,10 +226,13 @@ class ClipClientService : Service() {
             } catch (_: Exception) {
                 isConnectedNow = false
                 if (!stopping) {
-                    updateStatus(false, "Waiting for $host:$port…")
+                    updateStatus(false, if (autoConnectEnabled) "Waiting for $host:$port…" else "Disconnected")
                     startForeground(
                         Notifications.NOTIF_ID,
-                        Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                        if (autoConnectEnabled)
+                            Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                        else
+                            Notifications.notifDisconnected(this@ClipClientService)
                     )
                 } else {
                     updateStatus(false, "Disconnected")
@@ -258,17 +270,15 @@ class ClipClientService : Service() {
             isConnectedNow = false
             closeSocket()
             if (!stopping) {
-                if (autoConnectEnabled) {
-                    startForeground(
-                        Notifications.NOTIF_ID,
+                startForeground(
+                    Notifications.NOTIF_ID,
+                    if (autoConnectEnabled)
                         Notifications.notifWaiting(this@ClipClientService, "$host:$port")
-                    )
-                    startAutoConnectLoop()
-                } else {
-                    startForeground(
-                        Notifications.NOTIF_ID,
+                    else
                         Notifications.notifDisconnected(this@ClipClientService)
-                    )
+                )
+                if (autoConnectEnabled) {
+                    startAutoConnectLoop()
                 }
             }
         }
