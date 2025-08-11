@@ -54,8 +54,9 @@ class ClipClientService : Service() {
     private var output: DataOutputStream? = null
     private var host: String = ""
     private var port: Int = 0
+
     private var readerJob: Job? = null
-    private var reachJob: Job? = null
+    private var autoJob: Job? = null
 
     @Volatile private var stopping: Boolean = false
     @Volatile private var autoConnectEnabled: Boolean = false
@@ -95,7 +96,7 @@ class ClipClientService : Service() {
                             Notifications.NOTIF_ID,
                             Notifications.notifWaiting(this, "$host:$port")
                         )
-                        startReachabilityWatch()
+                        startAutoConnectLoop()
                         updateStatus(false, "Waiting for $host:$port…")
                     } else {
                         connect()
@@ -109,7 +110,7 @@ class ClipClientService : Service() {
                 autoConnectEnabled = newAuto
 
                 readerJob?.cancel()
-                reachJob?.cancel()
+                autoJob?.cancel()
                 closeSocket()
                 isConnectedNow = false
                 connecting.set(false)
@@ -120,7 +121,7 @@ class ClipClientService : Service() {
                         Notifications.notifWaiting(this, "$host:$port")
                     )
                     updateStatus(false, "Waiting for $host:$port…")
-                    startReachabilityWatch()
+                    startAutoConnectLoop()
                 } else {
                     startForeground(
                         Notifications.NOTIF_ID,
@@ -151,28 +152,39 @@ class ClipClientService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun startReachabilityWatch() {
+    private fun startAutoConnectLoop() {
         if (!autoConnectEnabled) return
-        if (isConnectedNow || connecting.get()) return
         val s = scope ?: return
-        reachJob?.cancel()
-        reachJob = s.launch {
+        autoJob?.cancel()
+        autoJob = s.launch {
+            var backoff = 1_000L
             while (!stopping && autoConnectEnabled && this.isActive) {
-                if (isEndpointReachable(host, port, 1200)) {
-                    connect()
-                    break
+                if (isConnectedNow) break
+                if (connecting.get()) {
+                    delay(300)
+                    continue
                 }
-                delay(3_000)
-            }
-        }
-    }
+                updateStatus(false, "Waiting for $host:$port…")
+                startForeground(
+                    Notifications.NOTIF_ID,
+                    Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                )
 
-    private fun isEndpointReachable(h: String, p: Int, timeoutMs: Int): Boolean {
-        return try {
-            Socket().use { sock -> sock.connect(InetSocketAddress(h, p), timeoutMs) }
-            true
-        } catch (_: Exception) {
-            false
+                connect()
+
+                var waited = 0L
+                while (connecting.get() && waited < 7_000L) {
+                    delay(100)
+                    waited += 100
+                }
+
+                if (isConnectedNow) break
+
+                delay(backoff)
+                if (backoff < 15_000L) {
+                    backoff = (backoff * 2).coerceAtMost(15_000L)
+                }
+            }
         }
     }
 
@@ -182,10 +194,8 @@ class ClipClientService : Service() {
         if (isConnectedNow) return
         if (!connecting.compareAndSet(false, true)) return
 
-        reachJob?.cancel()
         readerJob?.cancel()
         readerJob = s.launch {
-            var handledEnd = false
             updateStatus(false, "Connecting to $host:$port")
             startForeground(
                 Notifications.NOTIF_ID,
@@ -204,21 +214,14 @@ class ClipClientService : Service() {
                     Notifications.notifConnected(this@ClipClientService, "$host:$port")
                 )
                 readLoop()
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 isConnectedNow = false
-                if (stopping) {
-                    updateStatus(false, "Disconnected")
-                    startForeground(
-                        Notifications.NOTIF_ID,
-                        Notifications.notifDisconnected(this@ClipClientService)
-                    )
-                } else if (autoConnectEnabled) {
+                if (!stopping) {
                     updateStatus(false, "Waiting for $host:$port…")
                     startForeground(
                         Notifications.NOTIF_ID,
                         Notifications.notifWaiting(this@ClipClientService, "$host:$port")
                     )
-                    startReachabilityWatch()
                 } else {
                     updateStatus(false, "Disconnected")
                     startForeground(
@@ -226,25 +229,8 @@ class ClipClientService : Service() {
                         Notifications.notifDisconnected(this@ClipClientService)
                     )
                 }
-                handledEnd = true
             } finally {
                 connecting.set(false)
-
-                if (!handledEnd && !stopping) {
-                    if (autoConnectEnabled) {
-                        updateStatus(false, "Waiting for $host:$port…")
-                        startForeground(
-                            Notifications.NOTIF_ID,
-                            Notifications.notifWaiting(this@ClipClientService, "$host:$port")
-                        )
-                        startReachabilityWatch()
-                    } else {
-                        startForeground(
-                            Notifications.NOTIF_ID,
-                            Notifications.notifDisconnected(this@ClipClientService)
-                        )
-                    }
-                }
             }
         }
     }
@@ -265,26 +251,26 @@ class ClipClientService : Service() {
                 cm.setPrimaryClip(clip)
             }
         } catch (e: EOFException) {
-            if (stopping) {
-                updateStatus(false, "Disconnected")
-            } else if (autoConnectEnabled) {
-                updateStatus(false, "Waiting for $host:$port…")
-            } else {
-                updateStatus(false, "Disconnected")
-            }
+            updateStatus(false, if (autoConnectEnabled) "Waiting for $host:$port…" else "Disconnected")
         } catch (e: Exception) {
-            if (stopping) {
-                updateStatus(false, "Disconnected")
-            } else {
-                if (autoConnectEnabled) {
-                    updateStatus(false, "Waiting for $host:$port…")
-                } else {
-                    updateStatus(false, "Disconnected")
-                }
-            }
+            updateStatus(false, if (autoConnectEnabled) "Waiting for $host:$port…" else "Disconnected")
         } finally {
             isConnectedNow = false
             closeSocket()
+            if (!stopping) {
+                if (autoConnectEnabled) {
+                    startForeground(
+                        Notifications.NOTIF_ID,
+                        Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                    )
+                    startAutoConnectLoop()
+                } else {
+                    startForeground(
+                        Notifications.NOTIF_ID,
+                        Notifications.notifDisconnected(this@ClipClientService)
+                    )
+                }
+            }
         }
     }
 
@@ -343,7 +329,7 @@ class ClipClientService : Service() {
     private fun stopSelfSafely() {
         stopping = true
         readerJob?.cancel()
-        reachJob?.cancel()
+        autoJob?.cancel()
         scope?.cancel()
         scope = null
         connecting.set(false)
