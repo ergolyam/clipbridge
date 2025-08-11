@@ -134,6 +134,16 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
                 onCheckedChange = {
                     autoConnect = it
                     Prefs.setAutoConnect(appCtx, it)
+
+                    val p = port.toIntOrNull() ?: Prefs.getPort(appCtx)
+                    val h = if (host.isBlank()) Prefs.getHost(appCtx) else host.trim()
+                    val i = Intent(ctx, ClipClientService::class.java).apply {
+                        action = ClipClientService.ACTION_START
+                        putExtra(ClipClientService.EXTRA_HOST, h)
+                        putExtra(ClipClientService.EXTRA_PORT, p)
+                        putExtra(ClipClientService.EXTRA_AUTOCONNECT, it)
+                    }
+                    ContextCompat.startForegroundService(ctx, i)
                 }
             )
         }
