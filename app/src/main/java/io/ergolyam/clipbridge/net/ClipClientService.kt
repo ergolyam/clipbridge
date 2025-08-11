@@ -62,7 +62,6 @@ class ClipClientService : Service() {
     @Volatile private var startedOnce: Boolean = false
     @Volatile private var isConnectedNow: Boolean = false
 
-    /* Prevents parallel connect attempts. */
     private val connecting = AtomicBoolean(false)
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -186,6 +185,7 @@ class ClipClientService : Service() {
         reachJob?.cancel()
         readerJob?.cancel()
         readerJob = s.launch {
+            var handledEnd = false
             updateStatus(false, "Connecting to $host:$port")
             startForeground(
                 Notifications.NOTIF_ID,
@@ -226,8 +226,25 @@ class ClipClientService : Service() {
                         Notifications.notifDisconnected(this@ClipClientService)
                     )
                 }
+                handledEnd = true
             } finally {
                 connecting.set(false)
+
+                if (!handledEnd && !stopping) {
+                    if (autoConnectEnabled) {
+                        updateStatus(false, "Waiting for $host:$port…")
+                        startForeground(
+                            Notifications.NOTIF_ID,
+                            Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                        )
+                        startReachabilityWatch()
+                    } else {
+                        startForeground(
+                            Notifications.NOTIF_ID,
+                            Notifications.notifDisconnected(this@ClipClientService)
+                        )
+                    }
+                }
             }
         }
     }
@@ -268,18 +285,6 @@ class ClipClientService : Service() {
         } finally {
             isConnectedNow = false
             closeSocket()
-            if (!stopping && autoConnectEnabled) {
-                startForeground(
-                    Notifications.NOTIF_ID,
-                    Notifications.notifWaiting(this@ClipClientService, "$host:$port")
-                )
-                startReachabilityWatch()
-            } else {
-                startForeground(
-                    Notifications.NOTIF_ID,
-                    Notifications.notifDisconnected(this@ClipClientService)
-                )
-            }
         }
     }
 
