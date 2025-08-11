@@ -50,6 +50,7 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
     var host by remember { mutableStateOf(Prefs.getHost(appCtx)) }
     var port by remember { mutableStateOf(Prefs.getPort(appCtx).toString()) }
     var autoConnect by remember { mutableStateOf(Prefs.getAutoConnect(appCtx)) }
+    var autoWifiOnly by remember { mutableStateOf(Prefs.getAutoWifiOnly(appCtx)) }
     var connected by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Disconnected") }
 
@@ -73,6 +74,7 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
                 putExtra(ClipClientService.EXTRA_HOST, h)
                 putExtra(ClipClientService.EXTRA_PORT, p)
                 putExtra(ClipClientService.EXTRA_AUTOCONNECT, true)
+                putExtra(ClipClientService.EXTRA_WIFI_ONLY, Prefs.getAutoWifiOnly(appCtx))
             }
             ContextCompat.startForegroundService(ctx, i)
             status = "Waiting for $h:$p…"
@@ -142,6 +144,34 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
                         putExtra(ClipClientService.EXTRA_HOST, h)
                         putExtra(ClipClientService.EXTRA_PORT, p)
                         putExtra(ClipClientService.EXTRA_AUTOCONNECT, it)
+                        putExtra(ClipClientService.EXTRA_WIFI_ONLY, Prefs.getAutoWifiOnly(appCtx))
+                    }
+                    ContextCompat.startForegroundService(ctx, i)
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(text = "Only on Wi-Fi")
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = autoWifiOnly,
+                onCheckedChange = {
+                    autoWifiOnly = it
+                    Prefs.setAutoWifiOnly(appCtx, it)
+
+                    val p = port.toIntOrNull() ?: Prefs.getPort(appCtx)
+                    val h = if (host.isBlank()) Prefs.getHost(appCtx) else host.trim()
+                    val i = Intent(ctx, ClipClientService::class.java).apply {
+                        action = ClipClientService.ACTION_START
+                        putExtra(ClipClientService.EXTRA_HOST, h)
+                        putExtra(ClipClientService.EXTRA_PORT, p)
+                        putExtra(ClipClientService.EXTRA_AUTOCONNECT, Prefs.getAutoConnect(appCtx))
+                        putExtra(ClipClientService.EXTRA_WIFI_ONLY, it)
                     }
                     ContextCompat.startForegroundService(ctx, i)
                 }
@@ -162,6 +192,7 @@ fun ClipBridgeScreen(modifier: Modifier = Modifier) {
                         putExtra(ClipClientService.EXTRA_HOST, host.trim())
                         putExtra(ClipClientService.EXTRA_PORT, p)
                         putExtra(ClipClientService.EXTRA_AUTOCONNECT, Prefs.getAutoConnect(appCtx))
+                        putExtra(ClipClientService.EXTRA_WIFI_ONLY, Prefs.getAutoWifiOnly(appCtx))
                     }
                     ContextCompat.startForegroundService(ctx, i)
                 },

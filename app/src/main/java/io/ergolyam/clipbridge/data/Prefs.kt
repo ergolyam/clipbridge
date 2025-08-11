@@ -30,5 +30,15 @@ object Prefs {
             apply()
         }
     }
+
+    fun getAutoWifiOnly(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("auto_wifi_only", false)
+
+    fun setAutoWifiOnly(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().apply {
+            putBoolean("auto_wifi_only", enabled)
+            apply()
+        }
+    }
 }
 

@@ -5,6 +5,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -43,6 +45,7 @@ class ClipClientService : Service() {
         const val EXTRA_CONNECTED = "connected"
         const val EXTRA_STATUS_TEXT = "status"
         const val EXTRA_AUTOCONNECT = "auto"
+        const val EXTRA_WIFI_ONLY = "wifi_only"
 
         private const val MSG_TEXT: Byte = 0x01
         private const val MAX_BYTES = 1_048_576
@@ -60,6 +63,7 @@ class ClipClientService : Service() {
 
     @Volatile private var stopping: Boolean = false
     @Volatile private var autoConnectEnabled: Boolean = false
+    @Volatile private var autoWifiOnly: Boolean = false
     @Volatile private var startedOnce: Boolean = false
     @Volatile private var isConnectedNow: Boolean = false
 
@@ -80,11 +84,17 @@ class ClipClientService : Service() {
                 val newHost = intent.getStringExtra(EXTRA_HOST) ?: ""
                 val newPort = intent.getIntExtra(EXTRA_PORT, 28900)
                 val newAuto = intent.getBooleanExtra(EXTRA_AUTOCONNECT, false)
+                val newWifiOnly = intent.getBooleanExtra(EXTRA_WIFI_ONLY, false)
 
                 if (scope == null) scope = CoroutineScope(Dispatchers.IO)
                 stopping = false
 
-                if (startedOnce && host == newHost && port == newPort && autoConnectEnabled == newAuto) {
+                if (startedOnce &&
+                    host == newHost &&
+                    port == newPort &&
+                    autoConnectEnabled == newAuto &&
+                    autoWifiOnly == newWifiOnly
+                ) {
                     if (isConnectedNow) {
                         startForeground(
                             Notifications.NOTIF_ID,
@@ -108,6 +118,7 @@ class ClipClientService : Service() {
                 host = newHost
                 port = newPort
                 autoConnectEnabled = newAuto
+                autoWifiOnly = newWifiOnly
 
                 readerJob?.cancel()
                 autoJob?.cancel()
@@ -135,7 +146,10 @@ class ClipClientService : Service() {
                 val text = intent.getStringExtra(EXTRA_TEXT) ?: ""
                 scope?.launch {
                     val ok = sendFramed(text)
-                    showToast(if (ok) getString(R.string.toast_sent) else getString(R.string.toast_send_failed))
+                    showToast(
+                        if (ok) getString(R.string.toast_sent)
+                        else getString(R.string.toast_send_failed)
+                    )
                 }
             }
 
@@ -164,6 +178,17 @@ class ClipClientService : Service() {
                     delay(300)
                     continue
                 }
+
+                if (autoWifiOnly && !isOnWifi()) {
+                    updateStatus(false, "Waiting for Wi-Fi…")
+                    startForeground(
+                        Notifications.NOTIF_ID,
+                        Notifications.notifWaiting(this@ClipClientService, "$host:$port")
+                    )
+                    delay(1_000)
+                    continue
+                }
+
                 updateStatus(false, "Waiting for $host:$port…")
                 startForeground(
                     Notifications.NOTIF_ID,
@@ -196,6 +221,12 @@ class ClipClientService : Service() {
 
         readerJob?.cancel()
         readerJob = s.launch {
+            if (autoConnectEnabled && autoWifiOnly && !isOnWifi()) {
+                updateStatus(false, "Waiting for Wi-Fi…")
+                connecting.set(false)
+                return@launch
+            }
+
             if (!autoConnectEnabled) {
                 updateStatus(false, "Connecting to $host:$port")
                 startForeground(
@@ -226,7 +257,10 @@ class ClipClientService : Service() {
             } catch (_: Exception) {
                 isConnectedNow = false
                 if (!stopping) {
-                    updateStatus(false, if (autoConnectEnabled) "Waiting for $host:$port…" else "Disconnected")
+                    updateStatus(
+                        false,
+                        if (autoConnectEnabled) "Waiting for $host:$port…" else "Disconnected"
+                    )
                     startForeground(
                         Notifications.NOTIF_ID,
                         if (autoConnectEnabled)
@@ -337,20 +371,25 @@ class ClipClientService : Service() {
     }
 
     private fun stopSelfSafely() {
-        stopping = true
         readerJob?.cancel()
         autoJob?.cancel()
         scope?.cancel()
-        scope = null
-        connecting.set(false)
-        closeSocket()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
+    private fun isOnWifi(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val nw = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(nw) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
     override fun onDestroy() {
+        stopping = true
+        closeSocket()
+        scope?.cancel()
         super.onDestroy()
-        stopSelfSafely()
     }
 }
 
